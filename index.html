@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bem-vindo</title>
+  <style>
+    :root {
+      --bg-start: #667eea;
+      --bg-end: #764ba2;
+      --text: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 16px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
+      text-align: center;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(2.5rem, 10vw, 5rem);
+      letter-spacing: 0.1em;
+    }
+    p {
+      margin: 0;
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+    button {
+      padding: 0.8rem 1.6rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      color: #4b3b8f;
+      background: #ffffff;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+      transition: transform 0.15s ease;
+    }
+    button:hover { transform: scale(1.05); }
+  </style>
+</head>
+<body>
+  <h1 id="titulo">BEM VINDO</h1>
+  <p id="texto">Esta é uma página de teste.</p>
+  <button id="botao">Clique aqui</button>
+
+  <script>
+    const titulo = document.getElementById("titulo");
+    const texto = document.getElementById("texto");
+    const botao = document.getElementById("botao");
+    let contador = 0;
+
+    botao.addEventListener("click", () => {
+      contador++;
+      texto.textContent = `Você clicou ${contador} vez(es).`;
+    });
+  </script>
+</body>
+</html>
