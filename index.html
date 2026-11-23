@@ -186,7 +186,8 @@
         },
       });
       btn.disabled = false;
-      if (error) return setMsg(traduzErro(error.message), "error");
+      // Mostra a mensagem original do Supabase, para diagnóstico
+      if (error) return setMsg("Erro do Supabase: " + error.message, "error");
       formSignup.reset();
       setMsg("Cadastro enviado! Aguarde a aprovação do admin.", "ok");
     };
