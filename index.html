@@ -102,6 +102,8 @@
         email: $("signup-email").value.trim(),
         password: $("signup-password").value,
         options: {
+          // Para onde o link do email deve voltar (a página atual, sem localhost)
+          emailRedirectTo: new URL("index.html", location.href).href,
           data: {
             username: $("signup-username").value.trim(),
             full_name: $("signup-fullname").value.trim(),
