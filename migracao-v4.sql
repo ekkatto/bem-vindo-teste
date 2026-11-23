@@ -18,7 +18,7 @@ set search_path = public, extensions
 as $$
 begin
   perform net.http_post(
-    url := 'https://zohlwifvwocdcuajuvmb.supabase.co/functions/v1/clever-handler',
+    url := 'https://zohlwifvwocdcuajuvmb.supabase.co/functions/v1/notificar-admin',
     headers := jsonb_build_object('Content-Type', 'application/json'),
     body := jsonb_build_object('user_id', new.id)
   );
