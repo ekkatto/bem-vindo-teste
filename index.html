@@ -4,66 +4,128 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bem-vindo</title>
-  <style>
-    :root {
-      --bg-start: #667eea;
-      --bg-end: #764ba2;
-      --text: #ffffff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1.5rem;
-      padding: 16px;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      color: var(--text);
-      background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
-      text-align: center;
-    }
-    h1 {
-      margin: 0;
-      font-size: clamp(2.5rem, 10vw, 5rem);
-      letter-spacing: 0.1em;
-    }
-    p {
-      margin: 0;
-      font-size: 1.1rem;
-      opacity: 0.9;
-    }
-    button {
-      padding: 0.8rem 1.6rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 999px;
-      cursor: pointer;
-      color: #4b3b8f;
-      background: #ffffff;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
-      transition: transform 0.15s ease;
-    }
-    button:hover { transform: scale(1.05); }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1 id="titulo">BEM VINDO</h1>
-  <p id="texto">Esta é uma página de teste.</p>
-  <button id="botao">Clique aqui</button>
+  <main class="card">
+    <h1>BEM VINDO</h1>
+    <p class="sub">Entre ou crie sua conta.</p>
 
+    <div class="tabs">
+      <button id="tab-login" class="active" type="button">Entrar</button>
+      <button id="tab-signup" type="button">Criar conta</button>
+    </div>
+
+    <!-- Login -->
+    <form id="form-login">
+      <label>Email
+        <input id="login-email" type="email" required autocomplete="email">
+      </label>
+      <label>Senha
+        <input id="login-password" type="password" required autocomplete="current-password">
+      </label>
+      <button class="btn" type="submit">Entrar</button>
+    </form>
+
+    <!-- Cadastro -->
+    <form id="form-signup" class="hidden">
+      <label>Nome de usuário
+        <input id="signup-username" required pattern="[a-zA-Z0-9_.]{3,20}" title="3 a 20 caracteres: letras, números, _ ou ." autocomplete="username">
+      </label>
+      <label>Nome completo
+        <input id="signup-fullname" required autocomplete="name">
+      </label>
+      <label>Email
+        <input id="signup-email" type="email" required autocomplete="email">
+      </label>
+      <label>Senha (mínimo 6 caracteres)
+        <input id="signup-password" type="password" required minlength="6" autocomplete="new-password">
+      </label>
+      <button class="btn" type="submit">Criar conta</button>
+    </form>
+
+    <p id="msg" class="msg"></p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script>
-    const titulo = document.getElementById("titulo");
-    const texto = document.getElementById("texto");
-    const botao = document.getElementById("botao");
-    let contador = 0;
+    const msg = document.getElementById("msg");
+    const setMsg = (text, type = "") => { msg.textContent = text; msg.className = "msg " + type; };
 
-    botao.addEventListener("click", () => {
-      contador++;
-      texto.textContent = `Você clicou ${contador} vez(es).`;
-    });
+    const configOk = window.SUPABASE_URL && !window.SUPABASE_URL.includes("SEU-PROJETO");
+    if (!configOk) setMsg("Configure o config.js com a URL e a chave do Supabase.", "error");
+    const sb = configOk ? supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
+
+    // Abas
+    const tabLogin = document.getElementById("tab-login");
+    const tabSignup = document.getElementById("tab-signup");
+    const formLogin = document.getElementById("form-login");
+    const formSignup = document.getElementById("form-signup");
+    tabLogin.onclick = () => {
+      tabLogin.classList.add("active"); tabSignup.classList.remove("active");
+      formLogin.classList.remove("hidden"); formSignup.classList.add("hidden"); setMsg("");
+    };
+    tabSignup.onclick = () => {
+      tabSignup.classList.add("active"); tabLogin.classList.remove("active");
+      formSignup.classList.remove("hidden"); formLogin.classList.add("hidden"); setMsg("");
+    };
+
+    // Cadastro: o trigger no banco cria o perfil com status 'pending'
+    formSignup.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!sb) return;
+      const btn = formSignup.querySelector("button");
+      btn.disabled = true;
+      const { error } = await sb.auth.signUp({
+        email: document.getElementById("signup-email").value.trim(),
+        password: document.getElementById("signup-password").value,
+        options: {
+          data: {
+            username: document.getElementById("signup-username").value.trim(),
+            full_name: document.getElementById("signup-fullname").value.trim(),
+          },
+        },
+      });
+      btn.disabled = false;
+      if (error) return setMsg(traduzErro(error.message), "error");
+      formSignup.reset();
+      setMsg("Cadastro enviado! Confirme seu email (se solicitado) e aguarde a aprovação do admin.", "ok");
+    };
+
+    // Login: só entra na área liberada se o status for 'approved'
+    formLogin.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!sb) return;
+      const { data, error } = await sb.auth.signInWithPassword({
+        email: document.getElementById("login-email").value.trim(),
+        password: document.getElementById("login-password").value,
+      });
+      if (error) return setMsg(traduzErro(error.message), "error");
+
+      const { data: perfil, error: errPerfil } = await sb
+        .from("profiles").select("full_name, status, role").eq("id", data.user.id).single();
+      if (errPerfil || !perfil) return setMsg("Perfil não encontrado.", "error");
+
+      if (perfil.status === "approved") {
+        setMsg(`Bem-vindo, ${perfil.full_name}!` + (perfil.role === "admin" ? " (admin)" : ""), "ok");
+        if (perfil.role === "admin") setTimeout(() => location.href = "admin.html", 800);
+      } else if (perfil.status === "pending") {
+        await sb.auth.signOut();
+        setMsg("Seu cadastro está aguardando aprovação do admin.", "error");
+      } else {
+        await sb.auth.signOut();
+        setMsg("Seu cadastro não foi aprovado.", "error");
+      }
+    };
+
+    function traduzErro(m) {
+      if (/Invalid login/i.test(m)) return "Email ou senha incorretos.";
+      if (/Email not confirmed/i.test(m)) return "Confirme seu email antes de entrar.";
+      if (/already registered|already exists|duplicate/i.test(m)) return "Já existe um cadastro com esse email ou usuário.";
+      if (/least 6/i.test(m)) return "A senha precisa ter pelo menos 6 caracteres.";
+      return m;
+    }
   </script>
 </body>
 </html>

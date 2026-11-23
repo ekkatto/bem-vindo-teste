@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - Aprovação</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="card wide">
+    <h1>Painel do admin</h1>
+    <p class="sub"><a href="index.html">Voltar ao login</a></p>
+
+    <div id="login-box">
+      <form id="form-login">
+        <label>Email
+          <input id="login-email" type="email" required autocomplete="email">
+        </label>
+        <label>Senha
+          <input id="login-password" type="password" required autocomplete="current-password">
+        </label>
+        <button class="btn" type="submit">Entrar</button>
+      </form>
+    </div>
+
+    <div id="panel" class="hidden">
+      <div class="tabs">
+        <button id="tab-pending" class="active" type="button">Pendentes</button>
+        <button id="tab-all" type="button">Todos</button>
+      </div>
+      <div id="list"></div>
+    </div>
+
+    <p id="msg" class="msg"></p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script>
+    const msg = document.getElementById("msg");
+    const setMsg = (text, type = "") => { msg.textContent = text; msg.className = "msg " + type; };
+    const configOk = window.SUPABASE_URL && !window.SUPABASE_URL.includes("SEU-PROJETO");
+    if (!configOk) setMsg("Configure o config.js com a URL e a chave do Supabase.", "error");
+    const sb = configOk ? supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
+
+    let filtro = "pending";
+    const tabPending = document.getElementById("tab-pending");
+    const tabAll = document.getElementById("tab-all");
+    tabPending.onclick = () => { filtro = "pending"; tabPending.classList.add("active"); tabAll.classList.remove("active"); carregarLista(); };
+    tabAll.onclick = () => { filtro = "all"; tabAll.classList.add("active"); tabPending.classList.remove("active"); carregarLista(); };
+
+    document.getElementById("form-login").onsubmit = async (e) => {
+      e.preventDefault();
+      if (!sb) return;
+      const { error } = await sb.auth.signInWithPassword({
+        email: document.getElementById("login-email").value.trim(),
+        password: document.getElementById("login-password").value,
+      });
+      if (error) return setMsg("Email ou senha incorretos.", "error");
+      iniciarPainel();
+    };
+
+    async function iniciarPainel() {
+      const { data: { user } } = await sb.auth.getUser();
+      const { data: perfil } = await sb.from("profiles").select("role").eq("id", user.id).single();
+      if (!perfil || perfil.role !== "admin") {
+        await sb.auth.signOut();
+        return setMsg("Acesso negado: esta conta não é admin.", "error");
+      }
+      document.getElementById("login-box").classList.add("hidden");
+      document.getElementById("panel").classList.remove("hidden");
+      setMsg("");
+      carregarLista();
+    }
+
+    async function carregarLista() {
+      let q = sb.from("profiles").select("id, username, full_name, email, status, created_at").order("created_at", { ascending: false });
+      if (filtro === "pending") q = q.eq("status", "pending");
+      const { data, error } = await q;
+      if (error) return setMsg("Erro ao carregar: " + error.message, "error");
+      const list = document.getElementById("list");
+      if (!data.length) { list.innerHTML = "<p class='sub'>Nenhum cadastro aqui.</p>"; return; }
+
+      list.innerHTML = "<table><thead><tr><th>Usuário</th><th>Nome</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>";
+      const tbody = list.querySelector("tbody");
+      for (const p of data) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td></td><td></td><td></td><td></td><td class="actions"></td>`;
+        tr.children[0].textContent = p.username;
+        tr.children[1].textContent = p.full_name;
+        tr.children[2].textContent = p.email;
+        tr.children[3].textContent = p.status;
+        if (p.status !== "approved") tr.lastElementChild.appendChild(botao("Aprovar", "approve", "approved", p.id));
+        if (p.status !== "rejected") tr.lastElementChild.appendChild(botao("Rejeitar", "reject", "rejected", p.id));
+        tbody.appendChild(tr);
+      }
+    }
+
+    function botao(texto, classe, status, id) {
+      const b = document.createElement("button");
+      b.textContent = texto;
+      b.className = "btn small " + classe;
+      b.onclick = () => mudarStatus(id, status);
+      return b;
+    }
+
+    async function mudarStatus(id, status) {
+      const { error } = await sb.from("profiles").update({ status }).eq("id", id);
+      if (error) return setMsg("Erro: " + error.message, "error");
+      setMsg(status === "approved" ? "Cadastro aprovado." : "Cadastro rejeitado.", "ok");
+      carregarLista();
+    }
+  </script>
+</body>
+</html>
