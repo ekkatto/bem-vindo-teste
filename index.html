@@ -120,13 +120,35 @@
     formLogin.onsubmit = async (e) => {
       e.preventDefault();
       if (!sb) return;
+      const email = $("login-email").value.trim();
       const { data, error } = await sb.auth.signInWithPassword({
-        email: $("login-email").value.trim(),
+        email,
         password: $("login-password").value,
       });
-      if (error) return setMsg(traduzErro(error.message), "error");
+      if (error) {
+        if (/Email not confirmed/i.test(error.message)) return mostrarPendenteConfirmacao(email);
+        return setMsg(traduzErro(error.message), "error");
+      }
       checarPerfil(data.user, "login");
     };
+
+    // Conta criada, mas o email ainda não foi confirmado: oferece reenviar o link
+    function mostrarPendenteConfirmacao(email) {
+      limparExtras();
+      setMsg("Seu cadastro está pendente de confirmação. Confira sua caixa de entrada (e o spam) e clique no link do email.", "error");
+      addBotao("Reenviar email de confirmação", "", async (ev) => {
+        const b = ev.currentTarget;
+        b.disabled = true;
+        const { error } = await sb.auth.resend({
+          type: "signup",
+          email,
+          options: { emailRedirectTo: new URL("index.html", location.href).href },
+        });
+        b.disabled = false;
+        if (error) return setMsg(traduzErro(error.message), "error");
+        setMsg("Novo email de confirmação enviado. Confira sua caixa de entrada.", "ok");
+      });
+    }
 
     // Decide a tela pelo status do perfil. tipo ('login' | 'visit' | null) registra o acesso.
     async function checarPerfil(user, tipo) {
@@ -179,7 +201,8 @@
 
     function traduzErro(m) {
       if (/Invalid login/i.test(m)) return "Email ou senha incorretos.";
-      if (/Email not confirmed/i.test(m)) return "Confirme seu email antes de entrar.";
+      if (/Email not confirmed/i.test(m)) return "Seu cadastro está pendente de confirmação.";
+      if (/seconds|rate limit|security purposes/i.test(m)) return "Aguarde alguns segundos antes de pedir outro email.";
       if (/already registered|already exists|duplicate/i.test(m)) return "Já existe um cadastro com esse email ou usuário.";
       if (/least 6/i.test(m)) return "A senha precisa ter pelo menos 6 caracteres.";
       if (/bloqueada/i.test(m)) return "A conta não está bloqueada.";
