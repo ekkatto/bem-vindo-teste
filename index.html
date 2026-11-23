@@ -25,6 +25,7 @@
         <input id="login-password" type="password" required autocomplete="current-password">
       </label>
       <button class="btn" type="submit">Entrar</button>
+      <p class="link"><a href="#" id="link-esqueci">Esqueci minha senha</a></p>
     </form>
 
     <!-- Cadastro -->
@@ -42,6 +43,27 @@
         <input id="signup-password" type="password" required minlength="6" autocomplete="new-password">
       </label>
       <button class="btn" type="submit">Criar conta</button>
+    </form>
+
+    <!-- Esqueci minha senha: pede o link por email -->
+    <form id="form-esqueci" class="hidden">
+      <p class="sub">Informe seu email e enviaremos um link para criar uma nova senha.</p>
+      <label>Email
+        <input id="esqueci-email" type="email" required autocomplete="email">
+      </label>
+      <button class="btn" type="submit">Enviar link</button>
+      <p class="link"><a href="#" id="link-voltar">Voltar ao login</a></p>
+    </form>
+
+    <!-- Nova senha: aparece ao abrir o link do email -->
+    <form id="form-nova" class="hidden">
+      <label>Nova senha (mínimo 6 caracteres)
+        <input id="nova-senha" type="password" required minlength="6" autocomplete="new-password">
+      </label>
+      <label>Repita a nova senha
+        <input id="nova-senha2" type="password" required minlength="6" autocomplete="new-password">
+      </label>
+      <button class="btn" type="submit">Salvar nova senha</button>
     </form>
 
     <p id="msg" class="msg"></p>
@@ -62,18 +84,24 @@
     const tabSignup = $("tab-signup");
     const formLogin = $("form-login");
     const formSignup = $("form-signup");
+    const formEsqueci = $("form-esqueci");
+    const formNova = $("form-nova");
     const abas = document.querySelector(".tabs");
+    const todosForms = [formLogin, formSignup, formEsqueci, formNova];
+
+    // Mostra apenas um formulário (ou nenhum, se for null)
+    function mostrar(form) { todosForms.forEach((f) => f.classList.toggle("hidden", f !== form)); }
 
     tabLogin.onclick = () => {
       tabLogin.classList.add("active"); tabSignup.classList.remove("active");
-      formLogin.classList.remove("hidden"); formSignup.classList.add("hidden"); setMsg("");
+      mostrar(formLogin); setMsg("");
     };
     tabSignup.onclick = () => {
       tabSignup.classList.add("active"); tabLogin.classList.remove("active");
-      formSignup.classList.remove("hidden"); formLogin.classList.add("hidden"); setMsg("");
+      mostrar(formSignup); setMsg("");
     };
 
-    function esconderLogin() { abas.classList.add("hidden"); formLogin.classList.add("hidden"); formSignup.classList.add("hidden"); }
+    function esconderLogin() { abas.classList.add("hidden"); mostrar(null); }
     function mostrarLogin() { abas.classList.remove("hidden"); tabLogin.click(); }
     function limparExtras() { document.querySelectorAll(".extra").forEach((e) => e.remove()); }
     function addBotao(texto, classe, fn) {
@@ -91,6 +119,52 @@
       limparExtras();
       mostrarLogin();
     }
+
+    // Esqueci minha senha
+    $("link-esqueci").onclick = (e) => {
+      e.preventDefault();
+      abas.classList.add("hidden");
+      mostrar(formEsqueci);
+      setMsg("");
+    };
+    $("link-voltar").onclick = (e) => { e.preventDefault(); mostrarLogin(); };
+
+    formEsqueci.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!sb) return;
+      const btn = formEsqueci.querySelector("button");
+      btn.disabled = true;
+      const { error } = await sb.auth.resetPasswordForEmail($("esqueci-email").value.trim(), {
+        redirectTo: new URL("index.html", location.href).href,
+      });
+      btn.disabled = false;
+      if (error) return setMsg(traduzErro(error.message), "error");
+      formEsqueci.reset();
+      setMsg("Se o email estiver cadastrado, você receberá um link para criar uma nova senha.", "ok");
+    };
+
+    // Ao abrir o link do email, o Supabase dispara PASSWORD_RECOVERY: mostra a tela de nova senha
+    sb && sb.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        esconderLogin();
+        mostrar(formNova);
+        setMsg("Defina sua nova senha.", "ok");
+      }
+    });
+
+    formNova.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!sb) return;
+      const p1 = $("nova-senha").value;
+      if (p1 !== $("nova-senha2").value) return setMsg("As senhas não conferem.", "error");
+      const { error } = await sb.auth.updateUser({ password: p1 });
+      if (error) return setMsg(traduzErro(error.message), "error");
+      await sb.auth.signOut();
+      formNova.reset();
+      history.replaceState(null, "", location.pathname);
+      mostrarLogin();
+      setMsg("Senha alterada com sucesso. Entre com a nova senha.", "ok");
+    };
 
     // Cadastro: o trigger no banco cria o perfil com status 'pending'
     formSignup.onsubmit = async (e) => {
@@ -192,9 +266,11 @@
       }
     }
 
-    // Ao abrir a página com sessão ativa, verifica o status e conta a visita
+    // Ao abrir a página com sessão ativa, verifica o status e conta a visita.
+    // Links de redefinição de senha são tratados pelo evento PASSWORD_RECOVERY.
     (async () => {
       if (!sb) return;
+      if (location.hash.includes("type=recovery")) return;
       const { data: { session } } = await sb.auth.getSession();
       if (session) checarPerfil(session.user, "visit");
     })();
@@ -202,9 +278,10 @@
     function traduzErro(m) {
       if (/Invalid login/i.test(m)) return "Email ou senha incorretos.";
       if (/Email not confirmed/i.test(m)) return "Seu cadastro está pendente de confirmação.";
-      if (/seconds|rate limit|security purposes/i.test(m)) return "Aguarde alguns segundos antes de pedir outro email.";
+      if (/seconds|rate limit|security purposes/i.test(m)) return "Aguarde alguns segundos antes de tentar de novo.";
       if (/already registered|already exists|duplicate/i.test(m)) return "Já existe um cadastro com esse email ou usuário.";
       if (/least 6/i.test(m)) return "A senha precisa ter pelo menos 6 caracteres.";
+      if (/different from the old|same password/i.test(m)) return "A nova senha precisa ser diferente da anterior.";
       if (/bloqueada/i.test(m)) return "A conta não está bloqueada.";
       return m;
     }
