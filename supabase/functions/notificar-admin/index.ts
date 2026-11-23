@@ -1,4 +1,4 @@
-// Edge Function: envia email para os admins quando um usuário confirma o email.
+// Edge Function: envia email para os admins quando um novo usuário se cadastra.
 // Secrets necessários (Project Settings > Edge Functions > Secrets):
 //   RESEND_API_KEY  -> chave da API do Resend
 //   EMAIL_FROM      -> (opcional) remetente, ex.: "Cadastros <onboarding@resend.dev>"
@@ -20,13 +20,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // 1) Confirma que o email foi mesmo confirmado
-    const { data: userData, error: errUser } = await admin.auth.admin.getUserById(user_id);
-    if (errUser || !userData?.user?.email_confirmed_at) {
-      return new Response("ignorado: email não confirmado", { status: 200 });
-    }
-
-    // 2) Só notifica cadastros que ainda aguardam aprovação
+    // 1) Só notifica cadastros que ainda aguardam aprovação
     const { data: perfil } = await admin
       .from("profiles")
       .select("username, full_name, email, status")
@@ -36,12 +30,12 @@ Deno.serve(async (req) => {
       return new Response("ignorado: não está pendente", { status: 200 });
     }
 
-    // 3) Destinatários: todos os admins
+    // 2) Destinatários: todos os admins
     const { data: admins } = await admin.from("profiles").select("email").eq("role", "admin");
     const destinos = (admins ?? []).map((a) => a.email).filter(Boolean);
     if (!destinos.length) return new Response("nenhum admin cadastrado", { status: 200 });
 
-    // 4) Envia pelo Resend
+    // 3) Envia pelo Resend
     const html = `
       <p>Um novo usuário confirmou o email e aguarda sua aprovação:</p>
       <ul>

@@ -31,6 +31,7 @@
         <button data-f="pending" type="button">Pendentes</button>
         <button data-f="blocked" type="button">Bloqueados</button>
         <button data-f="unblock" type="button">Desbloqueio</button>
+        <button data-f="password" type="button">Senhas</button>
       </div>
 
       <form id="form-edit" class="edit hidden">
@@ -141,7 +142,7 @@
 
     async function carregar() {
       const [perfisRes, statsRes] = await Promise.all([
-        sb.from("profiles").select("id, username, full_name, email, status, role, unblock_requested, created_at")
+        sb.from("profiles").select("id, username, full_name, email, status, role, unblock_requested, password_pending, created_at")
           .order("created_at", { ascending: false }),
         sb.rpc("admin_user_stats"),
       ]);
@@ -166,6 +167,7 @@
         ["Pendentes", soma((p) => p.status === "pending")],
         ["Bloqueados", soma((p) => p.status === "blocked")],
         ["Pedidos de desbloqueio", soma((p) => p.status === "blocked" && p.unblock_requested)],
+        ["Senhas pendentes", soma((p) => p.password_pending)],
         ["Logins", logins],
         ["Visitas", visitas],
       ];
@@ -179,7 +181,8 @@
         filtro === "all" ||
         (filtro === "pending" && p.status === "pending") ||
         (filtro === "blocked" && p.status === "blocked") ||
-        (filtro === "unblock" && p.status === "blocked" && p.unblock_requested)
+        (filtro === "unblock" && p.status === "blocked" && p.unblock_requested) ||
+        (filtro === "password" && p.password_pending)
       );
       const listaEl = $("list");
       listaEl.innerHTML = "";
@@ -212,11 +215,22 @@
           tdStatus.append(" ", badge);
         }
 
+        if (p.password_pending) {
+          const badgeSenha = document.createElement("span");
+          badgeSenha.className = "badge warn";
+          badgeSenha.textContent = "senha pendente";
+          tdStatus.append(" ", badgeSenha);
+        }
+
         const tdActions = document.createElement("td");
         tdActions.className = "actions";
         const ehEu = p.id === meuId;
         if (p.status !== "approved") tdActions.append(botao(p.status === "blocked" ? "Desbloquear" : "Aprovar", "approve", () => mudarStatus(p, "approved")));
         if (p.status === "approved" && !ehEu) tdActions.append(botao("Bloquear", "reject", () => mudarStatus(p, "blocked")));
+        if (p.password_pending) {
+          tdActions.append(botao("Aprovar senha", "approve", () => aprovarSenha(p)));
+          tdActions.append(botao("Recusar senha", "reject", () => recusarSenha(p)));
+        }
         tdActions.append(botao("Editar", "", () => editar(p)));
         if (!ehEu) tdActions.append(botao("Excluir", "reject", () => excluir(p)));
 
@@ -247,6 +261,21 @@
       const { error } = await sb.from("profiles").update({ status, unblock_requested: false }).eq("id", p.id);
       if (error) return setMsg("Erro: " + error.message, "error");
       setMsg(status === "approved" ? "Usuário aprovado/desbloqueado." : "Usuário bloqueado.", "ok");
+      carregar();
+    }
+
+    async function aprovarSenha(p) {
+      const { error } = await sb.rpc("admin_approve_password", { p_id: p.id });
+      if (error) return setMsg("Erro ao aprovar a senha: " + error.message, "error");
+      setMsg("Nova senha aprovada.", "ok");
+      carregar();
+    }
+
+    async function recusarSenha(p) {
+      if (!confirm(`Recusar a nova senha de "${p.username}"? A senha antiga continua valendo.`)) return;
+      const { error } = await sb.rpc("admin_reject_password", { p_id: p.id });
+      if (error) return setMsg("Erro ao recusar a senha: " + error.message, "error");
+      setMsg("Nova senha recusada.", "ok");
       carregar();
     }
 

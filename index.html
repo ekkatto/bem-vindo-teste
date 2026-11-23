@@ -157,13 +157,14 @@
       if (!sb) return;
       const p1 = $("nova-senha").value;
       if (p1 !== $("nova-senha2").value) return setMsg("As senhas não conferem.", "error");
-      const { error } = await sb.auth.updateUser({ password: p1 });
+      // A senha nova só vale depois que o admin aprovar
+      const { error } = await sb.rpc("request_password_change", { p_password: p1 });
       if (error) return setMsg(traduzErro(error.message), "error");
       await sb.auth.signOut();
       formNova.reset();
       history.replaceState(null, "", location.pathname);
       mostrarLogin();
-      setMsg("Senha alterada com sucesso. Entre com a nova senha.", "ok");
+      setMsg("Nova senha recebida. Ela passa a valer depois que o admin aprovar.", "ok");
     };
 
     // Cadastro: o trigger no banco cria o perfil com status 'pending'
@@ -187,7 +188,7 @@
       btn.disabled = false;
       if (error) return setMsg(traduzErro(error.message), "error");
       formSignup.reset();
-      setMsg("Cadastro enviado! Confirme seu email (se solicitado) e aguarde a aprovação do admin.", "ok");
+      setMsg("Cadastro enviado! Aguarde a aprovação do admin.", "ok");
     };
 
     // Login: o usuário entra no Auth, e o status do perfil decide o que ele vê
