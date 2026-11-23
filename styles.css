@@ -49,6 +49,20 @@ input {
 .btn.small { width: auto; padding: 6px 12px; font-size: 0.85rem; margin: 0 4px 0 0; }
 .btn.reject { background: var(--danger); }
 .btn.approve { background: var(--ok); }
+.btn.secondary { background: #7a7690; }
+.row { display: flex; gap: 8px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.stat { background: #f7f5fc; border-radius: 8px; padding: 10px; text-align: center; font-size: 0.8rem; color: var(--muted); }
+.stat b { display: block; font-size: 1.4rem; color: var(--text); }
+.edit { border: 1px solid #d8d4ea; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+.edit h3 { margin: 0 0 8px; }
+select { width: 100%; margin-top: 4px; padding: 10px 12px; font-size: 1rem; border: 1px solid #cfcbe0; border-radius: 8px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; background: #eee; }
+.badge.warn { background: #fdebd0; }
+.table-wrap { overflow-x: auto; }
+.sub-cell { font-size: 0.8rem; color: var(--muted); }
+.filtros { flex-wrap: wrap; }
+.filtros button { flex: 1 1 auto; font-size: 0.85rem; padding: 8px; }
 .msg { margin-top: 14px; font-size: 0.95rem; text-align: center; min-height: 1.2em; }
 .msg.error { color: var(--danger); }
 .msg.ok { color: var(--ok); }

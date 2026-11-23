@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin - Aprovação</title>
+  <title>Admin - Usuários</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -24,92 +24,255 @@
     </div>
 
     <div id="panel" class="hidden">
-      <div class="tabs">
-        <button id="tab-pending" class="active" type="button">Pendentes</button>
-        <button id="tab-all" type="button">Todos</button>
+      <div class="stats" id="resumo"></div>
+
+      <div class="tabs filtros">
+        <button data-f="all" class="active" type="button">Todos</button>
+        <button data-f="pending" type="button">Pendentes</button>
+        <button data-f="blocked" type="button">Bloqueados</button>
+        <button data-f="unblock" type="button">Desbloqueio</button>
       </div>
+
+      <form id="form-edit" class="edit hidden">
+        <h3>Editar usuário</h3>
+        <input id="edit-id" type="hidden">
+        <label>Nome de usuário
+          <input id="edit-username" required pattern="[a-zA-Z0-9_.]{3,20}">
+        </label>
+        <label>Nome completo
+          <input id="edit-fullname" required>
+        </label>
+        <label>Perfil
+          <select id="edit-role">
+            <option value="user">Usuário</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <div class="row">
+          <button class="btn small" type="submit">Salvar</button>
+          <button class="btn small secondary" id="edit-cancel" type="button">Cancelar</button>
+        </div>
+      </form>
+
       <div id="list"></div>
     </div>
 
     <p id="msg" class="msg"></p>
+    <p class="sub"><a href="#" id="sair" class="hidden">Sair</a></p>
   </main>
 
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script>
-    const msg = document.getElementById("msg");
+    const $ = (id) => document.getElementById(id);
+    const msg = $("msg");
     const setMsg = (text, type = "") => { msg.textContent = text; msg.className = "msg " + type; };
     const configOk = window.SUPABASE_URL && !window.SUPABASE_URL.includes("SEU-PROJETO");
     if (!configOk) setMsg("Configure o config.js com a URL e a chave do Supabase.", "error");
     const sb = configOk ? supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
 
-    let filtro = "pending";
-    const tabPending = document.getElementById("tab-pending");
-    const tabAll = document.getElementById("tab-all");
-    tabPending.onclick = () => { filtro = "pending"; tabPending.classList.add("active"); tabAll.classList.remove("active"); carregarLista(); };
-    tabAll.onclick = () => { filtro = "all"; tabAll.classList.add("active"); tabPending.classList.remove("active"); carregarLista(); };
+    let perfis = [];
+    let stats = {};
+    let filtro = "all";
+    let meuId = null;
 
-    document.getElementById("form-login").onsubmit = async (e) => {
+    const ROTULOS = { pending: "Pendente", approved: "Aprovado", blocked: "Bloqueado" };
+
+    // Entrar
+    $("form-login").onsubmit = async (e) => {
       e.preventDefault();
       if (!sb) return;
       const { error } = await sb.auth.signInWithPassword({
-        email: document.getElementById("login-email").value.trim(),
-        password: document.getElementById("login-password").value,
+        email: $("login-email").value.trim(),
+        password: $("login-password").value,
       });
       if (error) return setMsg("Email ou senha incorretos.", "error");
       iniciarPainel();
     };
 
+    $("sair").onclick = async (e) => {
+      e.preventDefault();
+      await sb.auth.signOut();
+      location.reload();
+    };
+
+    // Filtros
+    document.querySelectorAll(".filtros button").forEach((b) => {
+      b.onclick = () => {
+        filtro = b.dataset.f;
+        document.querySelectorAll(".filtros button").forEach((x) => x.classList.toggle("active", x === b));
+        renderLista();
+      };
+    });
+
+    // Edição
+    $("edit-cancel").onclick = () => $("form-edit").classList.add("hidden");
+    $("form-edit").onsubmit = async (e) => {
+      e.preventDefault();
+      const id = $("edit-id").value;
+      const role = $("edit-role").value;
+      if (id === meuId && role !== "admin") return setMsg("Você não pode remover o próprio perfil de admin.", "error");
+      const { error } = await sb.from("profiles").update({
+        username: $("edit-username").value.trim(),
+        full_name: $("edit-fullname").value.trim(),
+        role,
+      }).eq("id", id);
+      if (error) return setMsg(error.message.includes("duplicate") ? "Esse nome de usuário já existe." : "Erro: " + error.message, "error");
+      $("form-edit").classList.add("hidden");
+      setMsg("Usuário atualizado.", "ok");
+      carregar();
+    };
+
     async function iniciarPainel() {
       const { data: { user } } = await sb.auth.getUser();
+      if (!user) return;
       const { data: perfil } = await sb.from("profiles").select("role").eq("id", user.id).single();
       if (!perfil || perfil.role !== "admin") {
         await sb.auth.signOut();
         return setMsg("Acesso negado: esta conta não é admin.", "error");
       }
-      document.getElementById("login-box").classList.add("hidden");
-      document.getElementById("panel").classList.remove("hidden");
+      meuId = user.id;
+      $("login-box").classList.add("hidden");
+      $("panel").classList.remove("hidden");
+      $("sair").classList.remove("hidden");
       setMsg("");
-      carregarLista();
+      carregar();
     }
 
-    async function carregarLista() {
-      let q = sb.from("profiles").select("id, username, full_name, email, status, created_at").order("created_at", { ascending: false });
-      if (filtro === "pending") q = q.eq("status", "pending");
-      const { data, error } = await q;
-      if (error) return setMsg("Erro ao carregar: " + error.message, "error");
-      const list = document.getElementById("list");
-      if (!data.length) { list.innerHTML = "<p class='sub'>Nenhum cadastro aqui.</p>"; return; }
+    async function carregar() {
+      const [perfisRes, statsRes] = await Promise.all([
+        sb.from("profiles").select("id, username, full_name, email, status, role, unblock_requested, created_at")
+          .order("created_at", { ascending: false }),
+        sb.rpc("admin_user_stats"),
+      ]);
+      if (perfisRes.error) return setMsg("Erro ao carregar: " + perfisRes.error.message, "error");
+      if (statsRes.error) return setMsg("Erro nas estatísticas: " + statsRes.error.message, "error");
 
-      list.innerHTML = "<table><thead><tr><th>Usuário</th><th>Nome</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>";
-      const tbody = list.querySelector("tbody");
-      for (const p of data) {
+      perfis = perfisRes.data;
+      stats = {};
+      statsRes.data.forEach((s) => {
+        stats[s.user_id] = { logins: Number(s.logins), visits: Number(s.visits), last: s.last_access };
+      });
+      renderResumo();
+      renderLista();
+    }
+
+    function renderResumo() {
+      const soma = (fn) => perfis.reduce((acc, p) => acc + (fn(p) ? 1 : 0), 0);
+      const logins = Object.values(stats).reduce((a, s) => a + s.logins, 0);
+      const visitas = Object.values(stats).reduce((a, s) => a + s.visits, 0);
+      const itens = [
+        ["Usuários", perfis.length],
+        ["Pendentes", soma((p) => p.status === "pending")],
+        ["Bloqueados", soma((p) => p.status === "blocked")],
+        ["Pedidos de desbloqueio", soma((p) => p.status === "blocked" && p.unblock_requested)],
+        ["Logins", logins],
+        ["Visitas", visitas],
+      ];
+      $("resumo").innerHTML = itens
+        .map(([rotulo, valor]) => `<div class="stat"><b>${valor}</b>${rotulo}</div>`)
+        .join("");
+    }
+
+    function renderLista() {
+      const lista = perfis.filter((p) =>
+        filtro === "all" ||
+        (filtro === "pending" && p.status === "pending") ||
+        (filtro === "blocked" && p.status === "blocked") ||
+        (filtro === "unblock" && p.status === "blocked" && p.unblock_requested)
+      );
+      const listaEl = $("list");
+      listaEl.innerHTML = "";
+      if (!lista.length) { listaEl.innerHTML = "<p class='sub'>Nada aqui.</p>"; return; }
+
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      wrap.innerHTML = "<table><thead><tr><th>Usuário</th><th>Status</th><th>Logins</th><th>Visitas</th><th>Último acesso</th><th></th></tr></thead><tbody></tbody></table>";
+      const tbody = wrap.querySelector("tbody");
+
+      for (const p of lista) {
+        const st = stats[p.id] || { logins: 0, visits: 0, last: null };
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td></td><td></td><td></td><td></td><td class="actions"></td>`;
-        tr.children[0].textContent = p.username;
-        tr.children[1].textContent = p.full_name;
-        tr.children[2].textContent = p.email;
-        tr.children[3].textContent = p.status;
-        if (p.status !== "approved") tr.lastElementChild.appendChild(botao("Aprovar", "approve", "approved", p.id));
-        if (p.status !== "rejected") tr.lastElementChild.appendChild(botao("Rejeitar", "reject", "rejected", p.id));
+
+        const tdUser = document.createElement("td");
+        const nome = document.createElement("div");
+        nome.textContent = p.username;
+        const sub = document.createElement("div");
+        sub.className = "sub-cell";
+        sub.textContent = `${p.full_name} · ${p.email}`;
+        tdUser.append(nome, sub);
+
+        const tdStatus = document.createElement("td");
+        tdStatus.textContent = ROTULOS[p.status] || p.status;
+        if (p.role === "admin") tdStatus.append(" · admin");
+        if (p.status === "blocked" && p.unblock_requested) {
+          const badge = document.createElement("span");
+          badge.className = "badge warn";
+          badge.textContent = "pediu desbloqueio";
+          tdStatus.append(" ", badge);
+        }
+
+        const tdActions = document.createElement("td");
+        tdActions.className = "actions";
+        const ehEu = p.id === meuId;
+        if (p.status !== "approved") tdActions.append(botao(p.status === "blocked" ? "Desbloquear" : "Aprovar", "approve", () => mudarStatus(p, "approved")));
+        if (p.status === "approved" && !ehEu) tdActions.append(botao("Bloquear", "reject", () => mudarStatus(p, "blocked")));
+        tdActions.append(botao("Editar", "", () => editar(p)));
+        if (!ehEu) tdActions.append(botao("Excluir", "reject", () => excluir(p)));
+
+        tr.innerHTML = "";
+        tr.append(tdUser, tdStatus, celula(st.logins), celula(st.visits), celula(st.last ? new Date(st.last).toLocaleString("pt-BR") : "—"), tdActions);
         tbody.appendChild(tr);
       }
+      listaEl.appendChild(wrap);
     }
 
-    function botao(texto, classe, status, id) {
+    function celula(valor) {
+      const td = document.createElement("td");
+      td.textContent = valor;
+      return td;
+    }
+
+    function botao(texto, classe, fn) {
       const b = document.createElement("button");
-      b.textContent = texto;
+      b.type = "button";
       b.className = "btn small " + classe;
-      b.onclick = () => mudarStatus(id, status);
+      b.textContent = texto;
+      b.onclick = fn;
       return b;
     }
 
-    async function mudarStatus(id, status) {
-      const { error } = await sb.from("profiles").update({ status }).eq("id", id);
+    // Aprovar, desbloquear ou bloquear. Ao mudar o status, zera o pedido de desbloqueio.
+    async function mudarStatus(p, status) {
+      const { error } = await sb.from("profiles").update({ status, unblock_requested: false }).eq("id", p.id);
       if (error) return setMsg("Erro: " + error.message, "error");
-      setMsg(status === "approved" ? "Cadastro aprovado." : "Cadastro rejeitado.", "ok");
-      carregarLista();
+      setMsg(status === "approved" ? "Usuário aprovado/desbloqueado." : "Usuário bloqueado.", "ok");
+      carregar();
     }
+
+    function editar(p) {
+      $("edit-id").value = p.id;
+      $("edit-username").value = p.username;
+      $("edit-fullname").value = p.full_name;
+      $("edit-role").value = p.role;
+      $("form-edit").classList.remove("hidden");
+      $("form-edit").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    async function excluir(p) {
+      if (!confirm(`Excluir a conta de "${p.username}"? Isso apaga o login e o histórico e não pode ser desfeito.`)) return;
+      const { error } = await sb.rpc("admin_delete_user", { p_id: p.id });
+      if (error) return setMsg("Erro ao excluir: " + error.message, "error");
+      setMsg("Conta excluída.", "ok");
+      carregar();
+    }
+
+    // Se já estiver logado como admin, abre o painel direto
+    (async () => {
+      if (!sb) return;
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) iniciarPainel();
+    })();
   </script>
 </body>
 </html>

@@ -50,18 +50,20 @@
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script>
-    const msg = document.getElementById("msg");
+    const $ = (id) => document.getElementById(id);
+    const msg = $("msg");
     const setMsg = (text, type = "") => { msg.textContent = text; msg.className = "msg " + type; };
 
     const configOk = window.SUPABASE_URL && !window.SUPABASE_URL.includes("SEU-PROJETO");
     if (!configOk) setMsg("Configure o config.js com a URL e a chave do Supabase.", "error");
     const sb = configOk ? supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
 
-    // Abas
-    const tabLogin = document.getElementById("tab-login");
-    const tabSignup = document.getElementById("tab-signup");
-    const formLogin = document.getElementById("form-login");
-    const formSignup = document.getElementById("form-signup");
+    const tabLogin = $("tab-login");
+    const tabSignup = $("tab-signup");
+    const formLogin = $("form-login");
+    const formSignup = $("form-signup");
+    const abas = document.querySelector(".tabs");
+
     tabLogin.onclick = () => {
       tabLogin.classList.add("active"); tabSignup.classList.remove("active");
       formLogin.classList.remove("hidden"); formSignup.classList.add("hidden"); setMsg("");
@@ -71,6 +73,25 @@
       formSignup.classList.remove("hidden"); formLogin.classList.add("hidden"); setMsg("");
     };
 
+    function esconderLogin() { abas.classList.add("hidden"); formLogin.classList.add("hidden"); formSignup.classList.add("hidden"); }
+    function mostrarLogin() { abas.classList.remove("hidden"); tabLogin.click(); }
+    function limparExtras() { document.querySelectorAll(".extra").forEach((e) => e.remove()); }
+    function addBotao(texto, classe, fn) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn extra " + (classe || "");
+      b.textContent = texto;
+      b.onclick = fn;
+      msg.insertAdjacentElement("afterend", b);
+      return b;
+    }
+
+    async function sair() {
+      await sb.auth.signOut();
+      limparExtras();
+      mostrarLogin();
+    }
+
     // Cadastro: o trigger no banco cria o perfil com status 'pending'
     formSignup.onsubmit = async (e) => {
       e.preventDefault();
@@ -78,12 +99,12 @@
       const btn = formSignup.querySelector("button");
       btn.disabled = true;
       const { error } = await sb.auth.signUp({
-        email: document.getElementById("signup-email").value.trim(),
-        password: document.getElementById("signup-password").value,
+        email: $("signup-email").value.trim(),
+        password: $("signup-password").value,
         options: {
           data: {
-            username: document.getElementById("signup-username").value.trim(),
-            full_name: document.getElementById("signup-fullname").value.trim(),
+            username: $("signup-username").value.trim(),
+            full_name: $("signup-fullname").value.trim(),
           },
         },
       });
@@ -93,37 +114,73 @@
       setMsg("Cadastro enviado! Confirme seu email (se solicitado) e aguarde a aprovação do admin.", "ok");
     };
 
-    // Login: só entra na área liberada se o status for 'approved'
+    // Login: o usuário entra no Auth, e o status do perfil decide o que ele vê
     formLogin.onsubmit = async (e) => {
       e.preventDefault();
       if (!sb) return;
       const { data, error } = await sb.auth.signInWithPassword({
-        email: document.getElementById("login-email").value.trim(),
-        password: document.getElementById("login-password").value,
+        email: $("login-email").value.trim(),
+        password: $("login-password").value,
       });
       if (error) return setMsg(traduzErro(error.message), "error");
+      checarPerfil(data.user, "login");
+    };
 
-      const { data: perfil, error: errPerfil } = await sb
-        .from("profiles").select("full_name, status, role").eq("id", data.user.id).single();
-      if (errPerfil || !perfil) return setMsg("Perfil não encontrado.", "error");
+    // Decide a tela pelo status do perfil. tipo ('login' | 'visit' | null) registra o acesso.
+    async function checarPerfil(user, tipo) {
+      const { data: perfil, error } = await sb
+        .from("profiles")
+        .select("full_name, status, role, unblock_requested")
+        .eq("id", user.id)
+        .single();
+      limparExtras();
+
+      if (error || !perfil) {
+        await sair();
+        return setMsg("Perfil não encontrado.", "error");
+      }
 
       if (perfil.status === "approved") {
+        if (tipo) {
+          const { error: errAcesso } = await sb.rpc("register_access", { p_kind: tipo });
+          if (errAcesso) console.warn("Não foi possível registrar o acesso:", errAcesso.message);
+        }
+        esconderLogin();
         setMsg(`Bem-vindo, ${perfil.full_name}!` + (perfil.role === "admin" ? " (admin)" : ""), "ok");
-        if (perfil.role === "admin") setTimeout(() => location.href = "admin.html", 800);
+        if (perfil.role === "admin") addBotao("Ir para o painel", "", () => (location.href = "admin.html"));
+        addBotao("Sair", "secondary", async () => { await sair(); setMsg(""); });
       } else if (perfil.status === "pending") {
-        await sb.auth.signOut();
+        await sair();
         setMsg("Seu cadastro está aguardando aprovação do admin.", "error");
-      } else {
-        await sb.auth.signOut();
-        setMsg("Seu cadastro não foi aprovado.", "error");
+      } else if (perfil.status === "blocked") {
+        esconderLogin();
+        if (perfil.unblock_requested) {
+          setMsg("Sua conta está bloqueada. O pedido de desbloqueio já foi enviado; aguarde o admin.", "error");
+        } else {
+          setMsg("Sua conta está bloqueada.", "error");
+          addBotao("Solicitar desbloqueio", "", async () => {
+            const { error: errReq } = await sb.rpc("request_unblock");
+            if (errReq) return setMsg(traduzErro(errReq.message), "error");
+            checarPerfil(user, null);
+          });
+        }
+        addBotao("Sair", "secondary", async () => { await sair(); setMsg(""); });
       }
-    };
+    }
+
+    // Ao abrir a página com sessão ativa, verifica o status e conta a visita
+    (async () => {
+      if (!sb) return;
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) checarPerfil(session.user, "visit");
+    })();
 
     function traduzErro(m) {
       if (/Invalid login/i.test(m)) return "Email ou senha incorretos.";
       if (/Email not confirmed/i.test(m)) return "Confirme seu email antes de entrar.";
       if (/already registered|already exists|duplicate/i.test(m)) return "Já existe um cadastro com esse email ou usuário.";
       if (/least 6/i.test(m)) return "A senha precisa ter pelo menos 6 caracteres.";
+      if (/bloqueada/i.test(m)) return "A conta não está bloqueada.";
       return m;
     }
   </script>
