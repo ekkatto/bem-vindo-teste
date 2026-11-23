@@ -13,6 +13,10 @@ create table public.profiles (
 
 alter table public.profiles enable row level security;
 
+-- Permissões de acesso à tabela (sem isso a API responde "permission denied")
+revoke all on public.profiles from anon;
+grant select, update on public.profiles to authenticated;
+
 -- Função que verifica se o usuário logado é admin (security definer evita recursão nas policies)
 create or replace function public.is_admin()
 returns boolean
